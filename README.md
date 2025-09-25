@@ -10,7 +10,6 @@ A modern web application that transforms the CLI-based GCP RHEL License Explorer
 - **Caching & Performance**: Intelligent caching with TTL for optimal API performance
 - **Modern UI**: React-based responsive interface with Tailwind CSS
 - **Docker Support**: Containerized deployment with multi-stage builds
-- **Context7 Integration**: Enhanced AI assistance with up-to-date documentation
 
 ## 🏗 Architecture
 
