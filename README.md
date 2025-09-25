@@ -10,7 +10,7 @@ A modern web application that transforms the CLI-based GCP RHEL License Explorer
 - **Caching & Performance**: Intelligent caching with TTL for optimal API performance
 - **Modern UI**: React-based responsive interface with Tailwind CSS
 - **Docker Support**: Containerized deployment with multi-stage builds
-- **Context7 Integration**: Enhanced AI assistance with up-to-date documentation
+
 
 ## 🏗 Architecture
 
@@ -33,6 +33,7 @@ A modern web application that transforms the CLI-based GCP RHEL License Explorer
 - Node.js 18+ 
 - GCP Project with Compute Engine API enabled
 - Service account credentials with appropriate permissions
+- Or, ya know..... use the docker instance
 
 ### Installation
 
@@ -174,13 +175,6 @@ npm run build
 - **Error Tracking**: Comprehensive error handling and reporting
 - **Performance Metrics**: Cache statistics and API timing
 
-## 🤝 Context7 Integration
-
-This project leverages Context7 MCP for enhanced AI assistance:
-- Real-time access to Google Cloud API documentation
-- Enhanced troubleshooting capabilities
-- Up-to-date code examples and patterns
-
 ## 📄 License
 
 MIT License - see LICENSE file for details.
@@ -200,3 +194,11 @@ For issues and questions:
 ---
 
 **Note**: This web tool maintains full compatibility with the functionality of the original CLI-based GCP RHEL License Explorer while providing an enhanced user experience through modern web technologies.
+
+**** NOTE **** 
+
+You will need alpha access to the API for this to work, also..... it could break stuff, so be gental
+
+Lastly for anyone who forks this or picks this up.... DO NOT JUST ENABLE the cli-ssh function 
+
+I commented it out because its incredibly dangerous if you don't know what you are doing, and its very unfinished. 

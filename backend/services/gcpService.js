@@ -1,20 +1,33 @@
-const { Compute } = require('@google-cloud/compute');
+const { InstancesClient, ZonesClient, MachineTypesClient } = require('@google-cloud/compute');
 const logger = require('../middleware/logger');
 
 class GCPService {
   constructor() {
-    this.computeClients = new Map();
+    this.instancesClients = new Map();
+    this.zonesClients = new Map();
+    this.machineTypesClients = new Map();
   }
 
   /**
-   * Get or create a Compute Engine client for a specific project
+   * Get or create an Instances client for a specific project
    */
-  getComputeClient(projectId) {
-    if (!this.computeClients.has(projectId)) {
-      const compute = new Compute({ projectId });
-      this.computeClients.set(projectId, compute);
+  getInstancesClient(projectId) {
+    if (!this.instancesClients.has(projectId)) {
+      const client = new InstancesClient();
+      this.instancesClients.set(projectId, client);
     }
-    return this.computeClients.get(projectId);
+    return this.instancesClients.get(projectId);
+  }
+
+  /**
+   * Get or create a Zones client for a specific project
+   */
+  getZonesClient(projectId) {
+    if (!this.zonesClients.has(projectId)) {
+      const client = new ZonesClient();
+      this.zonesClients.set(projectId, client);
+    }
+    return this.zonesClients.get(projectId);
   }
 
   /**
@@ -22,44 +35,65 @@ class GCPService {
    */
   async listInstances(projectId, zone = null) {
     try {
-      const compute = this.getComputeClient(projectId);
+      const instancesClient = this.getInstancesClient(projectId);
       
-      let instances;
+      let instances = [];
+      
       if (zone) {
-        const [vms] = await compute.zone(zone).getVMs();
-        instances = vms;
+        // List instances in specific zone
+        const request = {
+          project: projectId,
+          zone: zone,
+        };
+        const [response] = await instancesClient.list(request);
+        instances = response || [];
       } else {
-        const [vms] = await compute.getVMs();
-        instances = vms;
+        // List instances across all zones - we need to get zones first, then iterate
+        const zonesClient = this.getZonesClient(projectId);
+        const [zones] = await zonesClient.list({ project: projectId });
+        
+        // Get instances from each zone
+        for (const zone of zones) {
+          try {
+            const zoneRequest = {
+              project: projectId,
+              zone: zone.name,
+            };
+            const [zoneInstances] = await instancesClient.list(zoneRequest);
+            if (zoneInstances && zoneInstances.length > 0) {
+              instances.push(...zoneInstances);
+            }
+          } catch (error) {
+            // Skip zones with no instances or access issues
+            logger.warn(`Could not list instances in zone ${zone.name}:`, error.message);
+          }
+        }
       }
 
       // Process instances to extract relevant information
-      const processedInstances = await Promise.all(
-        instances.map(async (instance) => {
-          const metadata = await this.getInstanceMetadata(instance);
-          const licenseInfo = this.detectLicenseType(metadata);
-          
-          return {
-            id: instance.id,
-            name: instance.name,
-            zone: instance.zone?.name || instance.zone?.id,
-            machineType: this.extractMachineType(metadata.machineType),
-            status: metadata.status,
-            licenseInfo,
-            creationTimestamp: metadata.creationTimestamp,
-            disks: metadata.disks?.map(disk => ({
-              deviceName: disk.deviceName,
-              source: disk.source,
-              licenses: disk.licenses || []
-            })) || [],
-            networkInterfaces: metadata.networkInterfaces?.map(ni => ({
-              name: ni.name,
-              network: ni.network,
-              subnetwork: ni.subnetwork
-            })) || []
-          };
-        })
-      );
+      const processedInstances = instances.map((instance) => {
+        const licenseInfo = this.detectLicenseType(instance);
+        
+        return {
+          id: instance.id,
+          name: instance.name,
+          zone: this.extractZoneFromUrl(instance.zone),
+          machineType: this.extractMachineType(instance.machineType),
+          status: instance.status,
+          licenseInfo,
+          creationTimestamp: instance.creationTimestamp,
+          disks: instance.disks?.map(disk => ({
+            deviceName: disk.deviceName,
+            source: disk.source,
+            licenses: disk.licenses || []
+          })) || [],
+          networkInterfaces: instance.networkInterfaces?.map(ni => ({
+            name: ni.name,
+            network: ni.network,
+            subnetwork: ni.subnetwork
+          })) || []
+        };
+      });
 
       return processedInstances;
     } catch (error) {
@@ -69,27 +103,23 @@ class GCPService {
   }
 
   /**
-   * Get detailed metadata for a VM instance
+   * Extract zone name from zone URL
    */
-  async getInstanceMetadata(instance) {
-    try {
-      const [metadata] = await instance.getMetadata();
-      return metadata;
-    } catch (error) {
-      logger.error(`Error getting metadata for instance ${instance.name}:`, error);
-      throw error;
-    }
+  extractZoneFromUrl(zoneUrl) {
+    if (!zoneUrl) return 'unknown';
+    const parts = zoneUrl.split('/');
+    return parts[parts.length - 1];
   }
 
   /**
-   * Detect RHEL license type based on instance metadata
+   * Detect RHEL license type based on instance data
    */
-  detectLicenseType(instanceMetadata) {
+  detectLicenseType(instance) {
     const licenses = [];
     
     // Check disk licenses
-    if (instanceMetadata.disks) {
-      instanceMetadata.disks.forEach(disk => {
+    if (instance.disks) {
+      instance.disks.forEach(disk => {
         if (disk.licenses) {
           licenses.push(...disk.licenses);
         }
@@ -120,65 +150,17 @@ class GCPService {
    */
   async updateInstanceLicense(projectId, zone, instanceName, licenseConfig) {
     try {
-      const compute = this.getComputeClient(projectId);
-      const vm = compute.zone(zone).vm(instanceName);
-
-      // Stop instance if running
-      const [metadata] = await vm.getMetadata();
-      const wasRunning = metadata.status === 'RUNNING';
+      // This is a complex operation that requires stopping the instance,
+      // updating disk licenses, and restarting. For now, we'll return a placeholder
+      // indicating the feature is not yet implemented with the new API
+      logger.info(`License update requested for instance ${instanceName} (feature in development)`);
       
-      if (wasRunning) {
-        logger.info(`Stopping instance ${instanceName} for license update...`);
-        await vm.stop();
-        await this.waitForInstanceStatus(vm, 'TERMINATED');
-      }
-
-      // Update boot disk licenses
-      const [disks] = await vm.getDisks();
-      const bootDisk = disks[0]; // First disk is typically the boot disk
-
-      if (bootDisk) {
-        await bootDisk.setMetadata({
-          licenses: licenseConfig.licenses
-        });
-      }
-
-      // Restart instance if it was running
-      if (wasRunning) {
-        logger.info(`Restarting instance ${instanceName} after license update...`);
-        await vm.start();
-        await this.waitForInstanceStatus(vm, 'RUNNING');
-      }
-
-      logger.info(`License updated successfully for instance ${instanceName}`);
-      return true;
+      throw new Error('License update feature is currently being updated for the new GCP API. Please check back later.');
 
     } catch (error) {
       logger.error(`Error updating license for instance ${instanceName}:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Wait for instance to reach specified status
-   */
-  async waitForInstanceStatus(vm, targetStatus, timeout = 300000) {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < timeout) {
-      try {
-        const [metadata] = await vm.getMetadata();
-        if (metadata.status === targetStatus) {
-          return true;
-        }
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-      } catch (error) {
-        logger.error('Error checking instance status:', error);
-        throw error;
-      }
-    }
-    
-    throw new Error(`Timeout waiting for instance to reach status ${targetStatus}`);
   }
 
   /**
@@ -195,8 +177,11 @@ class GCPService {
    */
   async listZones(projectId) {
     try {
-      const compute = this.getComputeClient(projectId);
-      const [zones] = await compute.getZones();
+      const zonesClient = this.getZonesClient(projectId);
+      const request = {
+        project: projectId,
+      };
+      const [zones] = await zonesClient.list(request);
       
       return zones.map(zone => ({
         name: zone.name,
