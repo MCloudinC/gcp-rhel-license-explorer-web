@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker Support**: Complete containerization for easy deployment
 
 ### Technical Highlights
-- Context7 MCP integration for enhanced documentation access
 - WebSocket-based real-time communication
 - State management with local JSON file caching
 - Multi-stage Docker builds for optimized images
