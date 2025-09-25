@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  gcp-license-explorer:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-your-project-id}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+      - CACHE_TTL=${CACHE_TTL:-300000}
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./data:/app/data
+      - ./credentials:/app/credentials:ro
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - gcp-explorer-network
+
+networks:
+  gcp-explorer-network:
+    driver: bridge
+
+volumes:
+  gcp-data:
+    driver: local
+  gcp-logs:
+    driver: local
